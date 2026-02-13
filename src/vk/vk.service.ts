@@ -12,6 +12,7 @@ export class VkService implements OnModuleInit {
       startTime: number;
       shuffledIndices: number[];
       wrongRevealed?: number[];
+      attempts: number;
     }
   > = new Map();
   private processingUsers: Set<number> = new Set();
@@ -44,6 +45,7 @@ export class VkService implements OnModuleInit {
         revealed: [],
         startTime: Date.now(),
         shuffledIndices,
+        attempts: 0,
       });
 
       // Отправляем сообщение с inline callback-кнопками
@@ -89,6 +91,7 @@ export class VkService implements OnModuleInit {
           });
         } else {
           // Ошибка - показываем открытую кнопку красным и число на 2 сек
+          gameData.attempts++;
           gameData.wrongRevealed = [clickedNumber];
           this.gameState.set(peerId, gameData);
 
@@ -133,6 +136,7 @@ export class VkService implements OnModuleInit {
     nextNumber: number;
     revealed: number[];
     startTime: number;
+    attempts: number;
   }): string {
     if (gameData.nextNumber > 9) {
       const elapsedSeconds = Math.floor(
@@ -140,7 +144,7 @@ export class VkService implements OnModuleInit {
       );
       const minutes = Math.floor(elapsedSeconds / 60);
       const seconds = elapsedSeconds % 60;
-      return `🎉 Поздравляем! Вы нашли все цифры!\n⏱️ Время: ${minutes}м ${seconds}с`;
+      return `🎉 Поздравляем! Вы нашли все цифры!\n⏱️ Время: ${minutes}м ${seconds}с\n❌ Попыток: ${gameData.attempts}`;
     }
     return `Найдите все цифры по порядку. Ищите: ${gameData.nextNumber}`;
   }
