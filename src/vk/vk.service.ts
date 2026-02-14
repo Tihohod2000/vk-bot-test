@@ -8,6 +8,7 @@ export class VkService implements OnModuleInit {
     number,
     {
       nextNumber: number;
+      lastNumber: number;
       revealed: number[];
       startTime: number;
       shuffledIndices: number[];
@@ -31,8 +32,8 @@ export class VkService implements OnModuleInit {
     });
 
     // Подписка на новые сообщения
-    updates.on('message_new', async (context) => {
-      if (context.isOutbox) return;
+    updates.on('message_new', async (ctx) => {
+      if (ctx.isOutbox) return;
 
       // Создаем случайный порядок индексов для 9 чисел
       const shuffledIndices = Array.from({ length: 9 }, (_, i) => i).sort(
@@ -40,8 +41,9 @@ export class VkService implements OnModuleInit {
       );
 
       // Инициализируем состояние игры для пользователя
-      this.gameState.set(context.peerId, {
+      this.gameState.set(ctx.peerId, {
         nextNumber: 1,
+        lastNumber: 0,
         revealed: [],
         startTime: Date.now(),
         shuffledIndices,
@@ -49,9 +51,9 @@ export class VkService implements OnModuleInit {
       });
 
       // Отправляем сообщение с inline callback-кнопками
-      await context.send({
+      await ctx.send({
         message: 'Привет! Найдите все цифры по порядку от 1 до 9:',
-        keyboard: this.getKeyboard(context.peerId),
+        keyboard: this.getKeyboard(ctx.peerId),
       });
     });
 
@@ -78,6 +80,7 @@ export class VkService implements OnModuleInit {
           // Правильный ответ
           gameData.revealed.push(gameData.nextNumber);
           gameData.nextNumber++;
+          gameData.lastNumber = clickedNumber;
 
           this.gameState.set(peerId, gameData);
 
@@ -89,7 +92,16 @@ export class VkService implements OnModuleInit {
             message: messageText,
             keyboard: this.getKeyboard(peerId),
           });
-        } else {
+        }
+        else if (clickedNumber == gameData.lastNumber) {
+
+          await this.vk.api.messages.sendMessageEventAnswer({
+            event_id: ctx.eventId,
+            user_id: ctx.userId,
+            peer_id: ctx.peerId,
+          });
+        }
+        else {
           // Ошибка - показываем открытую кнопку красным и число на 2 сек
           gameData.attempts++;
           gameData.wrongRevealed = [clickedNumber];
@@ -108,6 +120,7 @@ export class VkService implements OnModuleInit {
 
           // Сбрасываем все: wrongRevealed, revealed и nextNumber
           gameData.wrongRevealed = [];
+          gameData.lastNumber = 0
           gameData.nextNumber = 1;
           gameData.revealed = [];
 
@@ -134,6 +147,7 @@ export class VkService implements OnModuleInit {
 
   private getMessageText(gameData: {
     nextNumber: number;
+    lastNumber: number;
     revealed: number[];
     startTime: number;
     attempts: number;
