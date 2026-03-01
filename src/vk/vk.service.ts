@@ -17,6 +17,15 @@ export class VkService implements OnModuleInit {
     }
   > = new Map();
   private processingUsers: Set<number> = new Set();
+  private userStats: Map<
+    number,
+    {
+      gamesPlayed: number;
+      bestTime: number | null;
+      bestAttempts: number | null;
+      totalAttempts: number;
+    }
+  > = new Map();
 
   constructor() {
     const token = process.env.VK_BOT_TOKEN;
@@ -34,6 +43,14 @@ export class VkService implements OnModuleInit {
     // Подписка на новые сообщения
     updates.on('message_new', async (ctx) => {
       if (ctx.isOutbox) return;
+
+      const text = (ctx.text || '').trim().toLowerCase();
+
+      // Обработка команды /статистика или !статистика
+      if (text === '/статистика' || text === '!статистика' || text === 'статистика') {
+        await this.showStats(ctx.peerId, ctx);
+        return;
+      }
 
       // Создаем случайный порядок индексов для 9 чисел
       const shuffledIndices = Array.from({ length: 9 }, (_, i) => i).sort(
@@ -92,6 +109,11 @@ export class VkService implements OnModuleInit {
             message: messageText,
             keyboard: this.getKeyboard(peerId),
           });
+
+          // Проверяем, завершена ли игра
+          if (gameData.nextNumber > 9) {
+            this.saveStats(peerId, gameData);
+          }
         }
         else if (clickedNumber == gameData.lastNumber) {
 
@@ -209,5 +231,73 @@ export class VkService implements OnModuleInit {
     }
 
     return keyboard;
+  }
+
+  private saveStats(
+    peerId: number,
+    gameData: {
+      startTime: number;
+      attempts: number;
+    },
+  ) {
+    const elapsedSeconds = Math.floor((Date.now() - gameData.startTime) / 1000);
+    const stats = this.userStats.get(peerId) || {
+      gamesPlayed: 0,
+      bestTime: null,
+      bestAttempts: null,
+      totalAttempts: 0,
+    };
+
+    stats.gamesPlayed++;
+    stats.totalAttempts += gameData.attempts;
+
+    if (stats.bestTime === null || elapsedSeconds < stats.bestTime) {
+      stats.bestTime = elapsedSeconds;
+    }
+
+    if (stats.bestAttempts === null || gameData.attempts < stats.bestAttempts) {
+      stats.bestAttempts = gameData.attempts;
+    }
+
+    this.userStats.set(peerId, stats);
+  }
+
+  private async showStats(peerId: number, ctx: any) {
+    const stats = this.userStats.get(peerId);
+    const gameData = this.gameState.get(peerId);
+
+    if (!stats || stats.gamesPlayed === 0) {
+      await ctx.send('📊 У вас пока нет завершённых игр.\nПройдите игру хотя бы один раз!');
+      return;
+    }
+
+    const avgAttempts = (stats.totalAttempts / stats.gamesPlayed).toFixed(2);
+
+    let message = `📊 **Ваша статистика**:\n`;
+    message += `🎮 Игр пройдено: ${stats.gamesPlayed}\n`;
+
+    if (stats.bestTime !== null) {
+      const minutes = Math.floor(stats.bestTime / 60);
+      const seconds = stats.bestTime % 60;
+      message += `⏱️ Лучшее время: ${minutes}м ${seconds}с\n`;
+    }
+
+    if (stats.bestAttempts !== null) {
+      message += `🎯 Лучшее количество попыток: ${stats.bestAttempts}\n`;
+    }
+
+    message += `📈 Среднее количество попыток: ${avgAttempts}`;
+
+    // Добавляем статистику текущей игры, если она активна
+    if (gameData && gameData.nextNumber <= 9) {
+      const elapsedSeconds = Math.floor((Date.now() - gameData.startTime) / 1000);
+      const currentMinutes = Math.floor(elapsedSeconds / 60);
+      const currentSeconds = elapsedSeconds % 60;
+      message += `\n\n🎮 **Текущая игра**:\n`;
+      message += `⏱️ Время: ${currentMinutes}м ${currentSeconds}с\n`;
+      message += `❌ Попыток: ${gameData.attempts}`;
+    }
+
+    await ctx.send(message);
   }
 }
